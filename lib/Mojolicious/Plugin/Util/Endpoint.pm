@@ -3,7 +3,7 @@ use Mojo::Base 'Mojolicious::Plugin';
 use Mojo::ByteStream 'b';
 use Mojo::URL;
 
-our $VERSION = '0.05';
+our $VERSION = '0.06';
 
 # Todo: Update to https://tools.ietf.org/html/rfc6570
 # Todo: Allow for changing scheme, port, host etc. afterwards
@@ -84,8 +84,6 @@ sub register {
 	return $c->url_for($name)->to_abs->to_string;
       };
 
-      # Todo: Directly return full path if no placeholder is in effect
-
       # Get url for route
       my $endpoint_url = $endpoints{$name}->clone;
 
@@ -108,6 +106,9 @@ sub register {
       # Unescape template variables
       $endpoint =~
 	s/\%7[bB](.+?)\%7[dD]/'{' . b($1)->url_unescape . '}'/ge;
+
+      # No placeholders in effect
+      return $endpoint unless index($endpoint,'{') >= 0;
 
       # Get stash or defaults hash
       my $stash_param = ref($c) eq 'Mojolicious::Controller' ?
@@ -275,7 +276,7 @@ Returns the route.
 
   # In Controller:
   #   Set endpoints:
-  $self->endpoint(hub => 'http://pubsubhubbub.appspot.com/');
+  $self->endpoint(hub => 'http://sojolicio.us/search?q={searchTerm}');
   $self->endpoint(hub => Mojo::URL->new('http://pubsubhubbub.appspot.com/'));
 
   #   Get endpoints:
