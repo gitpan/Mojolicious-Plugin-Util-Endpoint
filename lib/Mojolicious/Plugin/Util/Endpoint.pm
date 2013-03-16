@@ -3,7 +3,7 @@ use Mojo::Base 'Mojolicious::Plugin';
 use Mojo::ByteStream 'b';
 use Mojo::URL;
 
-our $VERSION = '0.08';
+our $VERSION = '0.09';
 
 # Todo: Update to https://tools.ietf.org/html/rfc6570
 # Todo: Allow for changing scheme, port, host etc. afterwards
@@ -25,7 +25,7 @@ sub register {
 
       # Endpoint already defined
       if (exists $endpoints{$name}) {
-	$mojo->log->debug(qq{Route endpoint "$name" already defined.});
+	$mojo->log->debug(qq{Route endpoint "$name" already defined});
 	return $route;
       };
 
@@ -80,7 +80,7 @@ sub register {
 
       # Endpoint undefined
       unless (defined $endpoints{$name}) {
-	$c->app->log->warn("No endpoint defined for $name.");
+	$c->app->log->warn("No endpoint defined for $name");
 	return $c->url_for($name)->to_abs->to_string;
       };
 
@@ -91,13 +91,16 @@ sub register {
       my $req_url = $c->req->url->to_abs;
 
       for ($endpoint_url) {
-	$_->host($req_url->host) unless $_->host;
-	unless ($_->scheme) {
-	  if ($_->host) {
-	    $_->scheme($req_url->scheme || 'http');
-	  };
+	unless ($_->host) {
+	  $_->host($req_url->host);
+
+	  # Only set port if host is set
+	  $_->port($req_url->port) unless $_->port;
 	};
-	$_->port($req_url->port) unless $_->port;
+
+	unless ($_->scheme) {
+	  $_->scheme($req_url->scheme || 'http') if $_->host;
+	};
       };
 
       # Convert object to string
@@ -233,7 +236,7 @@ but includes support for template URIs with parameters
 
 =head1 METHODS
 
-=head2 C<register>
+=head2 register
 
   # Mojolicious
   $app->plugin('Util::Endpoint');
@@ -246,7 +249,7 @@ Called when registering the plugin.
 
 =head1 SHORTCUTS
 
-=head2 C<endpoint>
+=head2 endpoint
 
   my $rs = $mojo->routes
   my $r = $rs->route('/suggest')->endpoint(
@@ -275,7 +278,7 @@ Returns the route.
 
 =head1 HELPERS
 
-=head2 C<endpoint>
+=head2 endpoint
 
   # In Controller:
   #   Set endpoints:
@@ -316,7 +319,7 @@ If the defined endpoint can't be found, the value for C<url_for>
 is returned.
 
 
-=head2 C<get_endpoints>
+=head2 get_endpoints
 
   # In Controller:
   my $hash = $self->get_endpoints;
@@ -332,7 +335,7 @@ B<Note:> This helper is EXPERIMENTAL and may be deprecated in further releases.
 
 =head1 COMMANDS
 
-=head2 C<endpoints>
+=head2 endpoints
 
   $ perl app.pl endpoints
 
@@ -351,7 +354,7 @@ L<Mojolicious> (best with SSL support).
 
 =head1 COPYRIGHT AND LICENSE
 
-Copyright (C) 2011-2012, Nils Diewald.
+Copyright (C) 2011-2013, L<Nils Diewald|http://nils-diewald.de/>.
 
 This program is free software, you can redistribute it
 and/or modify it under the same terms as Perl.

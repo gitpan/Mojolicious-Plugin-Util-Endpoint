@@ -1,5 +1,5 @@
 {
-   "abstract" : "unknown",
+   "abstract" : "Use template URIs in Mojolicious",
    "author" : [
       "Nils Diewald"
    ],
@@ -22,7 +22,7 @@
    "prereqs" : {
       "build" : {
          "requires" : {
-            "ExtUtils::MakeMaker" : "0"
+            "Test::More" : "0"
          }
       },
       "configure" : {
@@ -33,7 +33,6 @@
       "runtime" : {
          "requires" : {
             "Mojolicious" : "3.43",
-            "Test::More" : "0",
             "perl" : "5.010001"
          }
       }
@@ -47,5 +46,5 @@
          "url" : "https://github.com/Akron/Mojolicious-Plugin-Util-Endpoint"
       }
    },
-   "version" : "0.08"
+   "version" : "0.09"
 }

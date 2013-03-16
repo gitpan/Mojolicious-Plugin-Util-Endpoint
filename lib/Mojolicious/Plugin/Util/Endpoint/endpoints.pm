@@ -45,7 +45,7 @@ __END__
 
 =head1 NAME
 
-Mojolicious::Plugin::Util::Endpoint::endpoints - Show endpoints
+Mojolicious::Plugin::Util::Endpoint::endpoints - Show template URIs
 
 =head1 SYNOPSIS
 
@@ -53,6 +53,7 @@ Mojolicious::Plugin::Util::Endpoint::endpoints - Show endpoints
 
   my $ep = Mojolicious::Plugin::Util::Endpoint::endpoints->new;
   $ep->run;
+
 
 =head1 DESCRIPTION
 
@@ -70,14 +71,16 @@ L<Mojolicious::Plugin::Util::Endpoint::endpoints> inherits all
 attributes from L<Mojo::Command> and implements the following
 new ones.
 
-=head2 C<description>
+
+=head2 description
 
   my $description = $ep->description;
-  $ep            = $ep->description('Foo!');
+  $ep = $ep->description('Foo!');
 
 Short description of this command, used for the command list.
 
-=head2 C<usage>
+
+=head2 usage
 
   my $usage = $ep->usage;
   $ep       = $ep->usage('Foo!');
@@ -90,7 +93,8 @@ Usage information for this command, used for the help screen.
 L<Mojolicious::Plugin::Util::Endpoint::endpoints> inherits all
 methods from L<Mojo::Command> and implements the following new ones.
 
-=head2 C<run>
+
+=head2 run
 
   $ep->run;
 
@@ -110,7 +114,7 @@ L<Mojolicious::Plugin::Util::Endpoint>.
 
 =head1 COPYRIGHT AND LICENSE
 
-Copyright (C) 2012, Nils Diewald.
+Copyright (C) 2012-2013, L<Nils Diewald|http://nils-diewald.de/>.
 
 This program is free software, you can redistribute it
 and/or modify it under the same terms as Perl.
