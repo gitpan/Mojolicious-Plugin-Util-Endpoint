@@ -1,9 +1,10 @@
 package Mojolicious::Plugin::Util::Endpoint;
 use Mojo::Base 'Mojolicious::Plugin';
 use Mojo::ByteStream 'b';
+use Scalar::Util qw/blessed/;
 use Mojo::URL;
 
-our $VERSION = '0.09';
+our $VERSION = '0.10';
 
 # Todo: Update to https://tools.ietf.org/html/rfc6570
 # Todo: Allow for changing scheme, port, host etc. afterwards
@@ -32,50 +33,30 @@ sub register {
       # Route defined
       $route->name($name);
 
-      # Search for placeholders
-      my %placeholders;
-      my $r = $route;
-      $r->pattern->match('/');
-      while ($r) {
-	foreach (@{$r->pattern->placeholders}) {
-	  $placeholders{$_} = "{$_}";
-	};
-	$r = $r->parent;
-      };
-
-      # Set Endpoint url
-      my $endpoint_url =
-	$mojo->url_for(
-	  $name => %placeholders
-	)->to_abs->clone;
-
-      for my $url ($endpoint_url) {
-	foreach (qw/host port scheme query/) {
-	  $url->$_($param->{$_}) if exists $param->{$_};
-	};
-      };
-
       # Set to stash
-      $endpoints{$name} = $endpoint_url;
+      $endpoints{$name} = $param // {};
 
+      # Return route for piping
       return $route;
-    });
+    }
+  );
+
 
   # Add 'endpoint' helper
   $mojo->helper(
     endpoint => sub {
-      my $c           = shift;
-      my $name        = shift;
-      my $given_param = shift || {};
+      my $c = shift;
+      my $name = shift;
+      my $values = shift || {};
 
       # Define endpoint by string
-      unless (ref $given_param) {
-	return ($endpoints{$name} = Mojo::URL->new($given_param));
+      unless (ref $values) {
+	return ($endpoints{$name} = Mojo::URL->new($values));
       }
 
       # Define endpoint by Mojo::URL
-      elsif (ref $given_param eq 'Mojo::URL') {
-	return ($endpoints{$name} = $given_param->clone);
+      elsif (blessed $values && $values->isa('Mojo::URL')) {
+	return ($endpoints{$name} = $values->clone);
       };
 
       # Endpoint undefined
@@ -84,84 +65,109 @@ sub register {
 	return $c->url_for($name)->to_abs->to_string;
       };
 
-      # Get url for route
-      my $endpoint_url = $endpoints{$name}->clone;
+      # Set values
+      my %values = (
+	$c->isa('Mojolicious::Controller') ? %{$c->stash} : %{$c->defaults},
+	format => undef,
+	%$values
+      );
 
-      # Add request information
-      my $req_url = $c->req->url->to_abs;
-
-      for ($endpoint_url) {
-	unless ($_->host) {
-	  $_->host($req_url->host);
-
-	  # Only set port if host is set
-	  $_->port($req_url->port) unless $_->port;
-	};
-
-	unless ($_->scheme) {
-	  $_->scheme($req_url->scheme || 'http') if $_->host;
-	};
+      # Return interpolated string
+      if (blessed $endpoints{$name} && $endpoints{$name}->isa('Mojo::URL')) {
+	return _interpolate($endpoints{$name}->to_abs->to_string, \%values);
       };
 
-      # Convert object to string
-      my $endpoint = $endpoint_url->to_abs->to_string;
-
-      # Unescape template variables
-      $endpoint =~
-	s/\%7[bB](.+?)\%7[dD]/'{' . b($1)->url_unescape . '}'/ge;
-
-      # No placeholders in effect
-      return $endpoint unless index($endpoint,'{') >= 0;
-
-      # Get stash or defaults hash
-      my $stash_param = ref($c) eq 'Mojolicious::Controller' ?
-	$c->stash : ( ref $c eq 'Mojolicious' ? $c->defaults : {} );
-
-      # Interpolate template
-      pos($endpoint) = 0;
-      while ($endpoint =~ /\{([^\}\?}\?]+)\??\}/g) {
-
-	# Save search position
-	# Todo: That's not exact!
-	my $val = $1;
-	my $p = pos($endpoint) - length($val) - 1;
-
-	my $fill = undef;
-	# Look in given param
-	if (exists $given_param->{$val}) {
-	  $fill = $given_param->{$val};
-	}
-
-	# Look in stash
-	elsif (exists $stash_param->{$val}) {
-	  $fill = $stash_param->{$val};
-	};
-
-	if (defined $fill) {
-	  $fill = b($fill)->url_escape;
-	  $endpoint =~ s/\{$val\??\}/$fill/;
-	};
-
-	# Reset search position
-	# Todo: (not exact if it was optional)
-	pos($endpoint) = $p + length($fill || '');
+      # The following is based on url_for of Mojolicious::Controller
+      # and parts of path_for in Mojolicious::Routes::Route
+      # Get match object
+      my $match;
+      unless ($match = $c->match) {
+	$match = Mojolicious::Routes::Match->new(get => '/');
+	$match->root($c->app->routes);
       };
 
-      # Ignore optional placeholders
-      if (exists $given_param->{'?'} &&
-	    !defined $given_param->{'?'}) {
-	for ($endpoint) {
-	  s/(?<=[\&\?])[^=]+?=\{[^\?\}]+?\?\}//g;
-	  s/([\?\&])\&*/$1/g;
-	  s/\&$//g;
-	};
+      # Base
+      my $url = Mojo::URL->new;
+      my $req = $c->req;
+      $url->base($req->url->base->clone);
+      my $base = $url->base;
+      $base->userinfo(undef);
+
+      # Get parameters
+      my $param = $endpoints{$name};
+
+      # Set parameters to url
+      $url->scheme($param->{scheme}) if $param->{scheme};
+      $url->port($param->{port}) if $param->{port};
+      if ($param->{host}) {
+	$url->host($param->{host});
+	$url->port(undef) unless $param->{port};
+	$url->scheme('http') unless $url->scheme;
       };
 
-      # Strip empty query marker
-      $endpoint =~ s/\?$//;
+      # Clone query
+      $url->query( [@{$param->{query}}] ) if $param->{query};
 
-      return $endpoint;
-    });
+      # Get path
+      my $path = $url->path;
+
+      # Lookup match
+      my $r = $match->root->lookup($name);
+
+      # Interpolate path
+      my @parts;
+      while ($r) {
+	my $p = '';
+	foreach my $part (@{$r->pattern->tree}) {
+
+	  given ($part->[0]) {
+
+	    # Slash
+	    when ('slash') {
+	      $p .= '/';
+	    }
+
+	    # Text
+	    when ('text') {
+	      $p .= $part->[1];
+	    }
+
+	    # Various wildcards
+	    when ([qw/wildcard placeholder relaxed/]) {
+	      if (exists $values{$part->[1]}) {
+		$p .= $values{$part->[1]};
+	      }
+	      else {
+		$p .= '{' . $part->[1] . '}';
+	      };
+	    }
+	  };
+	};
+
+	# Prepend to path array
+	unshift(@parts, $p);
+
+	# Go up one level till root
+	$r = $r->parent;
+      };
+
+      # Set path
+      $path->parse(join('', @parts)) if @parts;
+
+      # Fix trailing slash
+      $path->trailing_slash(1)
+	if (!$name || $name eq 'current')
+	  && $req->url->path->trailing_slash;
+
+      # Make path absolute
+      my $base_path = $base->path;
+      unshift @{$path->parts}, @{$base_path->parts};
+      $base_path->parts([]);
+
+      # Interpolate url for query parameters
+      return _interpolate($url->to_string, \%values);
+    }
+  );
 
 
   # Add 'get_endpoints' helper
@@ -178,6 +184,54 @@ sub register {
       # Return endpoint hash
       return \%endpoint_hash;
     });
+};
+
+
+# Interpolate templates
+sub _interpolate {
+  my $endpoint = shift;
+
+  # Decode escaped symbols
+  $endpoint =~
+    s/\%7[bB](.+?)\%7[dD]/'{' . b($1)->url_unescape . '}'/ge;
+
+  my $param = shift;
+
+  # Interpolate template
+  pos($endpoint) = 0;
+  while ($endpoint =~ /\{([^\}\?}\?]+)\??\}/g) {
+
+    # Save search position
+    # Todo: That's not exact!
+    my $val = $1;
+    my $p = pos($endpoint) - length($val) - 1;
+
+    my $fill = undef;
+
+    # Look in param
+    if ($param->{$val}) {
+      $fill = b($param->{$val})->url_escape;
+      $endpoint =~ s/\{$val\??\}/$fill/;
+    };
+
+    # Reset search position
+    # Todo: (not exact if it was optional)
+    pos($endpoint) = $p + length($fill || '');
+  };
+
+  # Ignore optional placeholders
+  if (exists $param->{'?'} &&
+	!defined $param->{'?'}) {
+    for ($endpoint) {
+      s/(?<=[\&\?])[^=]+?=\{[^\?\}]+?\?\}//g;
+      s/([\?\&])\&*/$1/g;
+      s/\&$//g;
+    };
+  };
+
+  # Strip empty query marker
+  $endpoint =~ s/\?$//;
+  return $endpoint;
 };
 
 
