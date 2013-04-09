@@ -4,10 +4,11 @@ use Mojo::ByteStream 'b';
 use Scalar::Util qw/blessed/;
 use Mojo::URL;
 
-our $VERSION = '0.12';
+our $VERSION = '0.13';
 
 # Todo: Update to https://tools.ietf.org/html/rfc6570
 # Todo: Allow for changing scheme, port, host etc. afterwards
+# Todo: Allow parsing of template URIs
 
 # Endpoint hash
 our %endpoints;
@@ -59,12 +60,6 @@ sub register {
 	return ($endpoints{$name} = $values->clone);
       };
 
-      # Endpoint undefined
-      unless (defined $endpoints{$name}) {
-	$c->app->log->debug("No endpoint defined for $name");
-	return $c->url_for($name)->to_abs->to_string;
-      };
-
       # Set values
       my %values = (
 	$c->isa('Mojolicious::Controller') ? %{$c->stash} : %{$c->defaults},
@@ -72,9 +67,16 @@ sub register {
 	%$values
       );
 
+      # Endpoint undefined
+      unless (defined $endpoints{$name}) {
+
+	# Interpolate string
+	return _interpolate($name, \%values, $values);
+      };
+
       # Return interpolated string
       if (blessed $endpoints{$name} && $endpoints{$name}->isa('Mojo::URL')) {
-	return _interpolate($endpoints{$name}->to_abs->to_string, \%values);
+	return _interpolate($endpoints{$name}->to_abs->to_string, \%values, $values);
       };
 
       # The following is based on url_for of Mojolicious::Controller
@@ -165,7 +167,7 @@ sub register {
       $base_path->parts([]);
 
       # Interpolate url for query parameters
-      return _interpolate($url->to_abs->to_string, \%values);
+      return _interpolate($url->to_abs->to_string, \%values, $values);
     }
   );
 
@@ -196,6 +198,7 @@ sub _interpolate {
     s/\%7[bB](.+?)\%7[dD]/'{' . b($1)->url_unescape . '}'/ge;
 
   my $param = shift;
+  my $orig_param = shift;
 
   # Interpolate template
   pos($endpoint) = 0;
@@ -212,6 +215,20 @@ sub _interpolate {
     if ($param->{$val}) {
       $fill = b($param->{$val})->url_escape;
       $endpoint =~ s/\{$val\??\}/$fill/;
+    }
+
+    # unset specific parameters
+    elsif (exists $orig_param->{$val}) {
+
+      # Delete specific parameters
+      for ($endpoint) {
+	if (s/(?<=[\&\?])[^\}][^=]*?=\{$val\??\}//g) {
+	  s/([\?\&])\&*/$1/g;
+	  s/\&$//g;
+	};
+	s/^([^\?]+?)([\/\.])\{$val\??\}\2/$1$2/g;
+	s/^([^\?]+?)\{$val\??\}/$1/g;
+      };
     };
 
     # Reset search position
@@ -223,7 +240,7 @@ sub _interpolate {
   if (exists $param->{'?'} &&
 	!defined $param->{'?'}) {
     for ($endpoint) {
-      s/(?<=[\&\?])[^=]+?=\{[^\?\}]+?\?\}//g;
+      s/(?<=[\&\?])[^\}][^=]*?=\{[^\?\}]+?\?\}//g or last;
       s/([\?\&])\&*/$1/g;
       s/\&$//g;
     };
@@ -343,6 +360,13 @@ Returns the route.
   return $self->endpoint('webfinger');
   return $self->endpoint(webfinger => { user => 'me' } );
 
+  # Interpolate arbitrary template URIs
+  return $self->endpoint(
+    'http://sojolicio.us/.well-known/webfinger?resource={uri}&rel={rel?}' => {
+      'uri' => 'acct:akron@sojolicio.us',
+      '?'   => undef
+    });
+
   # In Template:
   <%= endpoint 'webfinger' %>
 
@@ -351,8 +375,8 @@ Get or set endpoints defined for a specific service.
 For setting it accepts the name of the endpoint and
 either a string with the endpoint URI or a L<Mojo::URL> object.
 
-For getting it accepts the name of the endpoint and
-additional stash values for the route as a hash reference.
+For getting it accepts the name of the endpoint or an arbitrary
+template URI and additional stash values for the route as a hash reference.
 These stash values override existing stash values from
 the controller and fill the template variables.
 
