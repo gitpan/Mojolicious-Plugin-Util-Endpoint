@@ -4,11 +4,10 @@ use Mojo::ByteStream 'b';
 use Scalar::Util qw/blessed/;
 use Mojo::URL;
 
-our $VERSION = '0.13';
+our $VERSION = '0.14';
 
 # Todo: Update to https://tools.ietf.org/html/rfc6570
 # Todo: Allow for changing scheme, port, host etc. afterwards
-# Todo: Allow parsing of template URIs
 
 # Endpoint hash
 our %endpoints;
@@ -46,9 +45,8 @@ sub register {
   # Add 'endpoint' helper
   $mojo->helper(
     endpoint => sub {
-      my $c = shift;
-      my $name = shift;
-      my $values = shift || {};
+      my ($c, $name, $values) = @_;
+      $values ||= {};
 
       # Define endpoint by string
       unless (ref $values) {
@@ -70,13 +68,22 @@ sub register {
       # Endpoint undefined
       unless (defined $endpoints{$name}) {
 
+	# Named route
+	if ($name !~ m!^([^:]+:)?/?/!) {
+	  return$c->url_for($name)->to_abs->to_string;
+	};
+
 	# Interpolate string
 	return _interpolate($name, \%values, $values);
       };
 
       # Return interpolated string
-      if (blessed $endpoints{$name} && $endpoints{$name}->isa('Mojo::URL')) {
-	return _interpolate($endpoints{$name}->to_abs->to_string, \%values, $values);
+      if (blessed($endpoints{$name}) && $endpoints{$name}->isa('Mojo::URL')) {
+	return _interpolate(
+	  $endpoints{$name}->to_abs->to_string,
+	  \%values,
+	  $values
+	);
       };
 
       # The following is based on url_for of Mojolicious::Controller
@@ -261,16 +268,16 @@ __END__
 
 =head1 NAME
 
-Mojolicious::Plugin::Util::Endpoint - Use template URIs in Mojolicious
+Mojolicious::Plugin::Util::Endpoint - Use Template URIs in Mojolicious
 
 
 =head1 SYNOPSIS
 
-  # Mojolicious
-  $self->plugin('Util::Endpoint');
-
   # Mojolicious::Lite
   plugin 'Util::Endpoint';
+
+  # Mojolicious
+  $self->plugin('Util::Endpoint');
 
   my $rs = $mojo->routes;
 
