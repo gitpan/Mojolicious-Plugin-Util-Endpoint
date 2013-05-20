@@ -4,6 +4,7 @@ author:
   - 'Nils Diewald'
 build_requires:
   Test::More: 0
+  Test::Output: 0
 configure_requires:
   ExtUtils::MakeMaker: 0
 dynamic_config: 1
@@ -18,9 +19,9 @@ no_index:
     - t
     - inc
 requires:
-  Mojolicious: 3.86
+  Mojolicious: 3.93
   perl: 5.010001
 resources:
   license: http://www.opensource.org/licenses/artistic-license-2.0
   repository: https://github.com/Akron/Mojolicious-Plugin-Util-Endpoint
-version: 0.14
+version: 0.15
